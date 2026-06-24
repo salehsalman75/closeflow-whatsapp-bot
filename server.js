@@ -35,8 +35,22 @@ app.get("/", (req, res) => {
 res.send("WhatsApp bot is running");
 });
 
-// app.post("/", handleWhatsApp);
 app.post("/whatsapp", handleWhatsApp);
+
+function createNewUser() {
+return {
+step: "start",
+intent: "",
+budget: null,
+location: "",
+propertyType: "",
+timeline: "",
+clientName: "",
+qualified: false,
+saved: false,
+followUpSent: false,
+};
+}
 
 function handleWhatsApp(req, res) {
 console.log("HANDLE WHATSAPP CALLED");
@@ -45,23 +59,8 @@ const from = req.body.WaId || req.body.From || "unknown";
 const msg = (req.body.Body || "").trim();
 const text = msg.toLowerCase();
 
-console.log("FROM KEY:", from);
-console.log("BODY:", msg);
-console.log("CURRENT USERS:", users);
-
-
 if (!users[from] || text === "reset") {
-users[from] = {
-step: "start",
-intent: "",
-budget: null,
-location: "",
-propertyType: "",
-timeline: "",
-qualified: false,
-saved: false,
-followUpSent: false,
-};
+users[from] = createNewUser();
 
 if (text === "reset") {
 return sendReply(res, "Reset done. Type Hi to start again.");
@@ -141,42 +140,38 @@ text.includes("move soon") ||
 text.includes("sell soon");
 
 user.qualified = serious;
+
+if (serious) {
+reply =
+"Perfect! Before I connect you with an agent, what name should our property advisor use when contacting you?";
+user.step = "client_name";
+} else {
+user.step = "done";
+saveLeadToAirtable(user, from);
+reply = "No problem. Reach out anytime when you're ready.";
+}
+} else if (user.step === "client_name") {
+user.clientName = msg;
 user.step = "done";
 
 saveLeadToAirtable(user, from);
 
-if (serious) {
-reply = `Perfect! Let's schedule the right next step: ${getCalendlyLink(user.intent)}`;
+reply = `Perfect! Let's schedule the right next step: ${getCalendlyLink(
+user.intent
+)}`;
+
 scheduleFollowUp(from, user);
 } else {
-reply = "No problem. Reach out anytime when you're ready.";
-}
-} else {
-if (
-text === "hi" ||
-text === "hello" ||
-text === "start"
-) {
-users[from] = {
-step: "start",
-intent: "",
-budget: null,
-location: "",
-timeline: "",
-propertyType: "",
-qualified: false,
-saved: false,
-followUpSent: false,
-};
-
+if (text === "hi" || text === "hello" || text === "start") {
+users[from] = createNewUser();
 reply = "Hey! Are you looking to Buy, Sell, or Rent a property?";
+users[from].step = "intent";
 } else {
 reply = user.qualified
-? `You can book here anytime: ${CALENDLY_LINK}`
+? `You can book here anytime: ${getCalendlyLink(user.intent)}`
 : "Would you like to book a quick call?";
 }
 }
-
 
 console.log("WhatsApp received:", msg);
 console.log("From:", from);
@@ -205,29 +200,13 @@ return CALENDLY_LINK;
 function calculateLeadScore(user) {
 let score = 0;
 
-if (user.intent === "buy") {
-score += 30;
-}
-
-if (user.intent === "sell") {
-score += 25;
-}
-
-if (user.intent === "rent") {
-score += 20;
-}
-
-if (user.budget) {
-score += 20;
-}
-
-if (user.location) {
-score += 10;
-}
-
-if (user.propertyType) {
-score += 10;
-}
+if (user.intent === "buy") score += 30;
+if (user.intent === "sell") score += 25;
+if (user.intent === "rent") score += 20;
+if (user.budget) score += 20;
+if (user.location) score += 10;
+if (user.propertyType) score += 10;
+if (user.clientName) score += 5;
 
 const timeline = String(user.timeline || "").toLowerCase();
 
@@ -248,10 +227,7 @@ status = "HOT 🔥";
 status = "WARM 🟡";
 }
 
-return {
-score,
-status,
-};
+return { score, status };
 }
 
 function saveLeadToAirtable(user, phone) {
@@ -276,6 +252,7 @@ pipelineStage = "Qualified";
 
 const activityEntry = `
 ${new Date().toLocaleString()}
+Client Name: ${user.clientName || ""}
 Intent: ${user.intent || ""}
 Budget: ${user.budget || ""}
 Location: ${user.location || ""}
@@ -294,6 +271,7 @@ const escapedPhone = cleanPhone.replace(/'/g, "\\'");
 
 const fields = {
 Phone: cleanPhone,
+"Client Name": user.clientName || "",
 Intent: user.intent,
 Location: user.location,
 Timeline: user.timeline,
@@ -308,12 +286,8 @@ Timeline: user.timeline,
 "Next Follow Up": nextFollowUp.toISOString(),
 
 Notes: note,
-
 "Activity Log": activityEntry,
 };
-
-console.log("Lead Owner =", "Salman");
-console.log(fields);
 
 if (user.propertyType) {
 fields["Property Type"] = user.propertyType;
@@ -322,7 +296,6 @@ fields["Property Type"] = user.propertyType;
 if (user.budget !== null && !Number.isNaN(user.budget)) {
 fields.Budget = user.budget;
 }
-
 
 base(TABLE_NAME)
 .select({
@@ -353,10 +326,6 @@ return;
 
 user.saved = true;
 console.log("Lead updated:", updatedRecords[0].id);
-
-if (lead.score >= 90 && !user.followUpSent) {
-scheduleFollowUp(phone, user);
-}
 }
 );
 } else {
@@ -374,35 +343,33 @@ return;
 
 user.saved = true;
 console.log("Lead created:", createdRecords[0].id);
-
-if (lead.score >= 90 && !user.followUpSent) {
-scheduleFollowUp(phone, user);
 }
-
+);
+}
 });
 }
-
-});
-}
-
 
 function scheduleFollowUp(to, user) {
 console.log("SCHEDULE FOLLOWUP STARTED", to);
+
+if (!twilioClient) {
+console.error("FOLLOW-UP ERROR: Twilio client not configured");
+return;
+}
 
 setTimeout(() => {
 if (user.followUpSent) return;
 
 const calendlyLink = getCalendlyLink(user.intent);
 
-const followUpMessage =
-`Quick follow-up — are you still interested in scheduling a quick call?
+const followUpMessage = `Quick follow-up — are you still interested in scheduling a quick call?
 
 You can book here anytime:
 ${calendlyLink}`;
+
 const cleanTo = String(to).replace("whatsapp:", "");
 const whatsappTo = cleanTo.startsWith("+")
 ? `whatsapp:${cleanTo}`
-
 : `whatsapp:+${cleanTo}`;
 
 console.log("TRYING TO SEND FOLLOW-UP TO:", whatsappTo);
@@ -422,8 +389,6 @@ console.error("FOLLOW-UP ERROR:", err.message);
 });
 }, 24 * 60 * 60 * 1000);
 }
-
-
 
 function parseBudget(value) {
 const clean = String(value).toLowerCase().replace(/,/g, "").trim();
@@ -479,6 +444,8 @@ return res.status(200).send("Calendly webhook received");
 });
 
 console.log("REACHED END OF FILE");
+
 app.listen(PORT, () => {
 console.log(`Server running on port ${PORT}`);
 });
+
