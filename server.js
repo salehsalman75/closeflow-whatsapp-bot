@@ -46,6 +46,7 @@ location: "",
 propertyType: "",
 timeline: "",
 clientName: "",
+email: "",
 qualified: false,
 saved: false,
 followUpSent: false,
@@ -150,8 +151,25 @@ user.step = "done";
 saveLeadToAirtable(user, from);
 reply = "No problem. Reach out anytime when you're ready.";
 }
+
 } else if (user.step === "client_name") {
 user.clientName = msg;
+
+reply = "Great! What's the best email address to reach you?";
+user.step = "email";
+
+} else if (user.step === "email") {
+
+const email = msg.trim();
+
+if (
+!email.includes("@") ||
+!email.includes(".")
+) {
+reply = "Please enter a valid email address.";
+} else {
+
+user.email = email;
 user.step = "done";
 
 saveLeadToAirtable(user, from);
@@ -161,7 +179,11 @@ user.intent
 )}`;
 
 scheduleFollowUp(from, user);
+
+}
+
 } else {
+
 if (text === "hi" || text === "hello" || text === "start") {
 users[from] = createNewUser();
 reply = "Hey! Are you looking to Buy, Sell, or Rent a property?";
@@ -207,6 +229,8 @@ if (user.budget) score += 20;
 if (user.location) score += 10;
 if (user.propertyType) score += 10;
 if (user.clientName) score += 5;
+if (user.email) score += 5;
+
 
 const timeline = String(user.timeline || "").toLowerCase();
 
@@ -253,6 +277,7 @@ pipelineStage = "Qualified";
 const activityEntry = `
 ${new Date().toLocaleString()}
 Client Name: ${user.clientName || ""}
+Email: ${user.email || ""}
 Intent: ${user.intent || ""}
 Budget: ${user.budget || ""}
 Location: ${user.location || ""}
@@ -272,6 +297,7 @@ const escapedPhone = cleanPhone.replace(/'/g, "\\'");
 const fields = {
 Phone: cleanPhone,
 "Client Name": user.clientName || "",
+Email: user.email || "",
 Intent: user.intent,
 Location: user.location,
 Timeline: user.timeline,
