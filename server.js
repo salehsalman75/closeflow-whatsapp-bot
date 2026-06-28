@@ -15,6 +15,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 4000;
 const CALENDLY_LINK = process.env.CALENDLY_LINK;
 const TABLE_NAME = process.env.TABLE_NAME;
+const CALENDLY_PAT = process.env.CALENDLY_PAT;
+const CALENDLY_API_BASE = "https://api.calendly.com";
 
 const base = new Airtable({
 apiKey: process.env.AIRTABLE_API_KEY,
@@ -36,6 +38,23 @@ res.send("WhatsApp bot is running");
 });
 
 app.post("/whatsapp", handleWhatsApp);
+app.get("/sync-calendly", async (req, res) => {
+try {
+const result = await syncCalendlyBookings();
+
+return res.json({
+success: true,
+...result,
+});
+} catch (error) {
+console.error("Calendly sync error:", error.message);
+
+return res.status(500).json({
+success: false,
+error: error.message,
+});
+}
+});
 
 function createNewUser() {
 return {
@@ -306,6 +325,7 @@ Timeline: user.timeline,
 "Lead Status": lead.status,
 "Pipeline Stage": pipelineStage,
 "Agent Status": "New",
+"Booking Status": user.qualified ? "Link Sent" : "Not Sent",
 
 "Lead Owner": "Salman",
 "Last Contacted": new Date().toISOString(),
@@ -416,6 +436,167 @@ console.error("FOLLOW-UP ERROR:", err.message);
 }, 24 * 60 * 60 * 1000);
 }
 
+async function calendlyRequest(path) {
+if (!CALENDLY_PAT) {
+throw new Error("CALENDLY_PAT is missing");
+}
+
+const res = await fetch(`${CALENDLY_API_BASE}${path}`, {
+headers: {
+Authorization: `Bearer ${CALENDLY_PAT}`,
+"Content-Type": "application/json",
+},
+});
+
+if (!res.ok) {
+const text = await res.text();
+throw new Error(`Calendly API error ${res.status}: ${text}`);
+}
+
+return res.json();
+}
+
+async function syncCalendlyBookings() {
+console.log("SYNC CALENDLY STARTED");
+
+const me = await calendlyRequest("/users/me");
+const userUri = me.resource.uri;
+
+const now = new Date();
+const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+const eventsData = await calendlyRequest(
+`/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${from.toISOString()}&max_start_time=${to.toISOString()}&status=active&sort=start_time:asc&count=100`
+);
+
+const events = eventsData.collection || [];
+let checked = 0;
+let updated = 0;
+
+for (const event of events) {
+const eventUuid = String(event.uri).split("/").pop();
+
+const inviteesData = await calendlyRequest(
+`/scheduled_events/${eventUuid}/invitees?status=active&count=100`
+);
+
+const invitees = inviteesData.collection || [];
+
+for (const invitee of invitees) {
+checked++;
+
+const didUpdate = await updateLeadBookingByEmail({
+email: invitee.email,
+inviteeName: invitee.name,
+eventUri: event.uri,
+inviteeUri: invitee.uri,
+startTime: event.start_time,
+eventName: event.name,
+});
+
+if (didUpdate) {
+updated++;
+}
+}
+}
+
+console.log("SYNC CALENDLY DONE", {
+checked,
+updated,
+});
+
+return {
+checked,
+updated,
+};
+}
+
+function updateLeadBookingByEmail({
+email,
+inviteeName,
+eventUri,
+inviteeUri,
+startTime,
+eventName,
+}) {
+return new Promise((resolve) => {
+if (!email) {
+return resolve(false);
+}
+
+const safeEmail = String(email).toLowerCase().replace(/'/g, "\\'");
+
+base(TABLE_NAME)
+.select({
+maxRecords: 1,
+filterByFormula: `LOWER({Email}) = '${safeEmail}'`,
+})
+.firstPage(function (searchErr, records) {
+if (searchErr) {
+console.error("Airtable booking search error:", searchErr);
+return resolve(false);
+}
+
+if (!records.length) {
+console.log("No Airtable lead found for Calendly email:", email);
+return resolve(false);
+}
+
+const record = records[0];
+const existingCalendlyUri = record.get("Calendly URI");
+
+if (existingCalendlyUri === inviteeUri || existingCalendlyUri === eventUri) {
+console.log("Booking already synced:", email);
+return resolve(false);
+}
+
+const existingLog = record.get("Activity Log") || "";
+
+const bookingEntry = `
+${new Date().toLocaleString()}
+Booking Confirmed
+Name: ${inviteeName || ""}
+Email: ${email || ""}
+Event: ${eventName || ""}
+Booking Time: ${startTime || ""}
+Calendly Event URI: ${eventUri || ""}
+Calendly Invitee URI: ${inviteeUri || ""}
+------------------------
+`;
+
+base(TABLE_NAME).update(
+[
+{
+id: record.id,
+fields: {
+"Booking Status": "Booked",
+"Booking Time": startTime,
+"Calendly Email": email,
+"Calendly Event ID": eventUri,
+"Calendly URI": inviteeUri || eventUri,
+"Viewing Booked": true,
+"Viewing Date": startTime,
+"Pipeline Stage": "Appointment Booked",
+"Agent Status": "Booked",
+"Activity Log": `${existingLog}\n${bookingEntry}`,
+},
+},
+],
+function (updateErr) {
+if (updateErr) {
+console.error("Airtable booking update error:", updateErr);
+return resolve(false);
+}
+
+console.log("Booking synced to Airtable:", email);
+return resolve(true);
+}
+);
+});
+});
+}
+
 function parseBudget(value) {
 const clean = String(value).toLowerCase().replace(/,/g, "").trim();
 
@@ -473,5 +654,12 @@ console.log("REACHED END OF FILE");
 
 app.listen(PORT, () => {
 console.log(`Server running on port ${PORT}`);
+
+setInterval(() => {
+syncCalendlyBookings().catch((error) => {
+console.error("Scheduled Calendly sync failed:", error.message);
 });
+}, 5 * 60 * 1000);
+});
+
 
