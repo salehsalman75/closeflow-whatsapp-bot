@@ -448,20 +448,15 @@ if (CALENDLY_ORGANIZATION_URI) {
 return CALENDLY_ORGANIZATION_URI;
 }
 
-const membershipsData = await calendlyRequest(
-"/organization_memberships?count=100"
-);
+const me = await calendlyRequest("/users/me");
 
-const memberships = membershipsData.collection || [];
-
-if (!memberships.length) {
-throw new Error("No Calendly organization memberships found.");
-}
-
-const organizationUri = memberships[0].organization;
+const organizationUri =
+me.resource.current_organization ||
+me.resource.organization ||
+"";
 
 if (!organizationUri) {
-throw new Error("Calendly organization URI not found.");
+throw new Error("Calendly organization URI not found from /users/me.");
 }
 
 return organizationUri;
