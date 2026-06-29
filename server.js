@@ -15,8 +15,10 @@ app.use(express.json());
 const PORT = process.env.PORT || 4000;
 const CALENDLY_LINK = process.env.CALENDLY_LINK;
 const TABLE_NAME = process.env.TABLE_NAME;
-const CALENDLY_PAT = process.env.CALENDLY_PAT;
+
 const CALENDLY_API_BASE = "https://api.calendly.com";
+const CALENDLY_PAT = process.env.CALENDLY_PAT;
+const CALENDLY_ORGANIZATION_URI = process.env.CALENDLY_ORGANIZATION_URI || "";
 
 const base = new Airtable({
 apiKey: process.env.AIRTABLE_API_KEY,
@@ -38,6 +40,7 @@ res.send("WhatsApp bot is running");
 });
 
 app.post("/whatsapp", handleWhatsApp);
+
 app.get("/sync-calendly", async (req, res) => {
 try {
 const result = await syncCalendlyBookings();
@@ -170,24 +173,16 @@ user.step = "done";
 saveLeadToAirtable(user, from);
 reply = "No problem. Reach out anytime when you're ready.";
 }
-
 } else if (user.step === "client_name") {
 user.clientName = msg;
-
 reply = "Great! What's the best email address to reach you?";
 user.step = "email";
-
 } else if (user.step === "email") {
-
 const email = msg.trim();
 
-if (
-!email.includes("@") ||
-!email.includes(".")
-) {
+if (!email.includes("@") || !email.includes(".")) {
 reply = "Please enter a valid email address.";
 } else {
-
 user.email = email;
 user.step = "done";
 
@@ -198,11 +193,8 @@ user.intent
 )}`;
 
 scheduleFollowUp(from, user);
-
 }
-
 } else {
-
 if (text === "hi" || text === "hello" || text === "start") {
 users[from] = createNewUser();
 reply = "Hey! Are you looking to Buy, Sell, or Rent a property?";
@@ -214,9 +206,6 @@ reply = user.qualified
 }
 }
 
-console.log("WhatsApp received:", msg);
-console.log("From:", from);
-console.log("User:", user);
 console.log("Reply:", reply);
 
 return sendReply(res, reply);
@@ -249,7 +238,6 @@ if (user.location) score += 10;
 if (user.propertyType) score += 10;
 if (user.clientName) score += 5;
 if (user.email) score += 5;
-
 
 const timeline = String(user.timeline || "").toLowerCase();
 
@@ -325,7 +313,6 @@ Timeline: user.timeline,
 "Lead Status": lead.status,
 "Pipeline Stage": pipelineStage,
 "Agent Status": "New",
-"Booking Status": user.qualified ? "Link Sent" : "Not Sent",
 
 "Lead Owner": "Salman",
 "Last Contacted": new Date().toISOString(),
@@ -456,18 +443,43 @@ throw new Error(`Calendly API error ${res.status}: ${text}`);
 return res.json();
 }
 
+async function getCalendlyOrganizationUri() {
+if (CALENDLY_ORGANIZATION_URI) {
+return CALENDLY_ORGANIZATION_URI;
+}
+
+const membershipsData = await calendlyRequest(
+"/organization_memberships?count=100"
+);
+
+const memberships = membershipsData.collection || [];
+
+if (!memberships.length) {
+throw new Error("No Calendly organization memberships found.");
+}
+
+const organizationUri = memberships[0].organization;
+
+if (!organizationUri) {
+throw new Error("Calendly organization URI not found.");
+}
+
+return organizationUri;
+}
+
 async function syncCalendlyBookings() {
 console.log("SYNC CALENDLY STARTED");
 
-const me = await calendlyRequest("/users/me");
-const userUri = me.resource.uri;
+const organizationUri = await getCalendlyOrganizationUri();
 
 const now = new Date();
 const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
 const eventsData = await calendlyRequest(
-`/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${from.toISOString()}&max_start_time=${to.toISOString()}&status=active&sort=start_time:asc&count=100`
+`/scheduled_events?organization=${encodeURIComponent(
+organizationUri
+)}&min_start_time=${from.toISOString()}&max_start_time=${to.toISOString()}&status=active&sort=start_time:asc&count=100`
 );
 
 const events = eventsData.collection || [];
@@ -546,7 +558,10 @@ return resolve(false);
 const record = records[0];
 const existingCalendlyUri = record.get("Calendly URI");
 
-if (existingCalendlyUri === inviteeUri || existingCalendlyUri === eventUri) {
+if (
+existingCalendlyUri === inviteeUri ||
+existingCalendlyUri === eventUri
+) {
 console.log("Booking already synced:", email);
 return resolve(false);
 }
@@ -631,22 +646,7 @@ return String(value)
 }
 
 app.post("/webhook/calendly", (req, res) => {
-const event = req.body;
-
-const payload = event.payload || {};
-const invitee = payload.invitee || {};
-const scheduledEvent = payload.scheduled_event || {};
-
-const email = invitee.email || "";
-const startTime = scheduledEvent.start_time || "";
-const eventId = scheduledEvent.uri || "";
-
-console.log("Calendly booking:", {
-email,
-startTime,
-eventId,
-});
-
+console.log("Calendly webhook received:", req.body);
 return res.status(200).send("Calendly webhook received");
 });
 
@@ -661,5 +661,7 @@ console.error("Scheduled Calendly sync failed:", error.message);
 });
 }, 5 * 60 * 1000);
 });
+
+
 
 
