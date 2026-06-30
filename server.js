@@ -588,7 +588,7 @@ fields: {
 "Viewing Booked": true,
 "Viewing Date": startTime,
 "Pipeline Stage": "Appointment Booked",
-"Agent Status": "Booked",
+"Agent Status": "Viewing Scheduled",
 "Activity Log": `${existingLog}\n${bookingEntry}`,
 },
 },
