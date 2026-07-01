@@ -477,6 +477,7 @@ organizationUri
 )}&min_start_time=${from.toISOString()}&max_start_time=${to.toISOString()}&status=active&sort=start_time:asc&count=100`
 );
 
+console.log("Calendly eventsData:", JSON.stringify(eventsData, null, 2));
 const events = eventsData.collection || [];
 let checked = 0;
 let updated = 0;
