@@ -42,6 +42,17 @@ res.send("WhatsApp bot is running");
 app.post("/whatsapp", handleWhatsApp);
 
 app.get("/sync-calendly", async (req, res) => {
+app.get("/debug-calendly-me", async (req, res) => {
+try {
+const me = await calendlyRequest("/users/me");
+return res.json(me);
+} catch (error) {
+return res.status(500).json({
+success: false,
+error: error.message,
+});
+}
+});
 try {
 const result = await syncCalendlyBookings();
 
