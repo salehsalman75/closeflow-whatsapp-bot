@@ -491,6 +491,9 @@ const inviteesData = await calendlyRequest(
 const invitees = inviteesData.collection || [];
 
 for (const invitee of invitees) {
+console.log("Invitee Email:", invitee.email);
+console.log("Invitee Name:", invitee.name);
+console.log("Event URI:", event.uri);
 checked++;
 
 const didUpdate = await updateLeadBookingByEmail({
