@@ -39,6 +39,7 @@ app.get("/", (req, res) => {
 res.send("WhatsApp bot is running");
 });
 
+
 app.post("/whatsapp", handleWhatsApp);
 
 app.get("/sync-calendly", async (req, res) => {
@@ -70,23 +71,6 @@ error: error.message,
 });
 }
 });
-
-try {
-const result = await syncCalendlyBookings();
-
-return res.json({
-success: true,
-...result,
-});
-} catch (error) {
-console.error("Calendly sync error:", error.message);
-
-return res.status(500).json({
-success: false,
-error: error.message,
-});
-}
-
 
 function createNewUser() {
 return {
