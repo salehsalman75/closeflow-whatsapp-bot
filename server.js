@@ -481,7 +481,7 @@ console.log("SYNC CALENDLY STARTED");
 const organizationUri = await getCalendlyOrganizationUri();
 
 const now = new Date();
-const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
 const eventsData = await calendlyRequest(
