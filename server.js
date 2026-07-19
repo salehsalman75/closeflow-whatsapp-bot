@@ -4,6 +4,7 @@ const cors = require("cors");
 const Airtable = require("airtable");
 const twilio = require("twilio");
 require("dotenv").config();
+
 const crypto = require("crypto");
 
 const app = express();
@@ -14,12 +15,20 @@ app.use(bodyParser.json());
 app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
+
 const CALENDLY_LINK = process.env.CALENDLY_LINK;
 const TABLE_NAME = process.env.TABLE_NAME;
 
 const CALENDLY_API_BASE = "https://api.calendly.com";
 const CALENDLY_PAT = process.env.CALENDLY_PAT;
-const CALENDLY_ORGANIZATION_URI = process.env.CALENDLY_ORGANIZATION_URI || "";
+const CALENDLY_ORGANIZATION_URI =
+process.env.CALENDLY_ORGANIZATION_URI || "";
+
+const AGENT_WHATSAPP_NUMBER =
+process.env.AGENT_WHATSAPP_NUMBER || "";
+
+const BOOKING_TIMEZONE =
+process.env.BOOKING_TIMEZONE || "Asia/Bahrain";
 
 const base = new Airtable({
 apiKey: process.env.AIRTABLE_API_KEY,
@@ -27,7 +36,10 @@ apiKey: process.env.AIRTABLE_API_KEY,
 
 let twilioClient = null;
 
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+if (
+process.env.TWILIO_ACCOUNT_SID &&
+process.env.TWILIO_AUTH_TOKEN
+) {
 twilioClient = twilio(
 process.env.TWILIO_ACCOUNT_SID,
 process.env.TWILIO_AUTH_TOKEN
@@ -39,7 +51,6 @@ const users = {};
 app.get("/", (req, res) => {
 res.send("WhatsApp bot is running");
 });
-
 
 app.post("/whatsapp", handleWhatsApp);
 
@@ -73,8 +84,22 @@ error: error.message,
 }
 });
 
+app.post("/webhook/calendly", (req, res) => {
+console.log(
+"Calendly webhook received:",
+JSON.stringify(req.body, null, 2)
+);
+
+return res
+.status(200)
+.send("Calendly webhook received");
+});
+
 function generateLeadId() {
-return `CF-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+return `CF-${crypto
+.randomBytes(4)
+.toString("hex")
+.toUpperCase()}`;
 }
 
 function createNewUser() {
@@ -97,7 +122,11 @@ followUpSent: false,
 function handleWhatsApp(req, res) {
 console.log("HANDLE WHATSAPP CALLED");
 
-const from = req.body.WaId || req.body.From || "unknown";
+const from =
+req.body.WaId ||
+req.body.From ||
+"unknown";
+
 const msg = (req.body.Body || "").trim();
 const text = msg.toLowerCase();
 
@@ -105,7 +134,10 @@ if (!users[from] || text === "reset") {
 users[from] = createNewUser();
 
 if (text === "reset") {
-return sendReply(res, "Reset done. Type Hi to start again.");
+return sendReply(
+res,
+"Reset done. Type Hi to start again."
+);
 }
 }
 
@@ -117,12 +149,17 @@ console.log("TEXT:", text);
 console.log("USER:", user);
 
 if (user.step === "start") {
-reply = "Hey! Are you looking to Buy, Sell, or Rent a property?";
+reply =
+"Hey! Are you looking to Buy, Sell, or Rent a property?";
+
 user.step = "intent";
 } else if (user.step === "intent") {
 if (text.includes("buy")) {
 user.intent = "buy";
-reply = "Great! What budget are you working with?";
+
+reply =
+"Great! What budget are you working with?";
+
 user.step = "budget";
 } else if (
 text.includes("rent") ||
@@ -130,42 +167,63 @@ text.includes("rental") ||
 text.includes("lease")
 ) {
 user.intent = "rent";
-reply = "Great! What monthly rental budget are you working with?";
+
+reply =
+"Great! What monthly rental budget are you working with?";
+
 user.step = "budget";
 } else if (text.includes("sell")) {
 user.intent = "sell";
+
 reply =
 "Got it! What type of property are you selling?\n\nApartment\nVilla\nOffice\nLand";
+
 user.step = "property_type";
 } else {
-reply = "Please reply with Buy, Sell, or Rent.";
+reply =
+"Please reply with Buy, Sell, or Rent.";
 }
 } else if (user.step === "budget") {
 user.budget = parseBudget(msg);
-reply = "Nice! Which city or area are you interested in?";
+
+reply =
+"Nice! Which city or area are you interested in?";
+
 user.step = "location";
 } else if (user.step === "location") {
 user.location = msg;
+
 reply =
 "What type of property are you looking for?\n\nApartment\nVilla\nOffice\nLand";
+
 user.step = "property_type";
 } else if (user.step === "property_type") {
 user.propertyType = msg;
 
 if (user.intent === "sell") {
-reply = "Which city or area is the property located in?";
+reply =
+"Which city or area is the property located in?";
+
 user.step = "seller_location";
 } else {
-reply = "Are you looking to move soon or just exploring?";
+reply =
+"Are you looking to move soon or just exploring?";
+
 user.step = "timeline";
 }
 } else if (user.step === "seller_location") {
 user.location = msg;
-reply = "What is your expected selling price?";
+
+reply =
+"What is your expected selling price?";
+
 user.step = "seller_price";
 } else if (user.step === "seller_price") {
 user.budget = parseBudget(msg);
-reply = "Are you looking to sell soon or just exploring?";
+
+reply =
+"Are you looking to sell soon or just exploring?";
+
 user.step = "timeline";
 } else if (user.step === "timeline") {
 user.timeline = msg;
@@ -186,21 +244,32 @@ user.qualified = serious;
 if (serious) {
 reply =
 "Perfect! Before I connect you with an agent, what name should our property advisor use when contacting you?";
+
 user.step = "client_name";
 } else {
 user.step = "done";
+
 saveLeadToAirtable(user, from);
-reply = "No problem. Reach out anytime when you're ready.";
+
+reply =
+"No problem. Reach out anytime when you're ready.";
 }
 } else if (user.step === "client_name") {
 user.clientName = msg;
-reply = "Great! What's the best email address to reach you?";
+
+reply =
+"Great! What's the best email address to reach you?";
+
 user.step = "email";
 } else if (user.step === "email") {
 const email = msg.trim();
 
-if (!email.includes("@") || !email.includes(".")) {
-reply = "Please enter a valid email address.";
+if (
+!email.includes("@") ||
+!email.includes(".")
+) {
+reply =
+"Please enter a valid email address.";
 } else {
 user.email = email;
 user.step = "done";
@@ -214,13 +283,22 @@ user.intent
 scheduleFollowUp(from, user);
 }
 } else {
-if (text === "hi" || text === "hello" || text === "start") {
+if (
+text === "hi" ||
+text === "hello" ||
+text === "start"
+) {
 users[from] = createNewUser();
-reply = "Hey! Are you looking to Buy, Sell, or Rent a property?";
+
+reply =
+"Hey! Are you looking to Buy, Sell, or Rent a property?";
+
 users[from].step = "intent";
 } else {
 reply = user.qualified
-? `You can book here anytime: ${getCalendlyLink(user.intent)}`
+? `You can book here anytime: ${getCalendlyLink(
+user.intent
+)}`
 : "Would you like to book a quick call?";
 }
 }
@@ -232,15 +310,24 @@ return sendReply(res, reply);
 
 function getCalendlyLink(intent) {
 if (intent === "buy") {
-return process.env.CALENDLY_BUY_LINK || CALENDLY_LINK;
+return (
+process.env.CALENDLY_BUY_LINK ||
+CALENDLY_LINK
+);
 }
 
 if (intent === "sell") {
-return process.env.CALENDLY_SELL_LINK || CALENDLY_LINK;
+return (
+process.env.CALENDLY_SELL_LINK ||
+CALENDLY_LINK
+);
 }
 
 if (intent === "rent") {
-return process.env.CALENDLY_RENT_LINK || CALENDLY_LINK;
+return (
+process.env.CALENDLY_RENT_LINK ||
+CALENDLY_LINK
+);
 }
 
 return CALENDLY_LINK;
@@ -252,13 +339,16 @@ let score = 0;
 if (user.intent === "buy") score += 30;
 if (user.intent === "sell") score += 25;
 if (user.intent === "rent") score += 20;
+
 if (user.budget) score += 20;
 if (user.location) score += 10;
 if (user.propertyType) score += 10;
 if (user.clientName) score += 5;
 if (user.email) score += 5;
 
-const timeline = String(user.timeline || "").toLowerCase();
+const timeline = String(
+user.timeline || ""
+).toLowerCase();
 
 if (
 timeline.includes("soon") ||
@@ -277,7 +367,10 @@ status = "HOT 🔥";
 status = "WARM 🟡";
 }
 
-return { score, status };
+return {
+score,
+status,
+};
 }
 
 function saveLeadToAirtable(user, phone) {
@@ -302,6 +395,7 @@ pipelineStage = "Qualified";
 
 const activityEntry = `
 ${new Date().toLocaleString()}
+Lead ID: ${user.leadId || ""}
 Client Name: ${user.clientName || ""}
 Email: ${user.email || ""}
 Intent: ${user.intent || ""}
@@ -315,10 +409,20 @@ Status: ${lead.status}
 `;
 
 const nextFollowUp = new Date();
-nextFollowUp.setDate(nextFollowUp.getDate() + 2);
 
-const cleanPhone = String(phone).replace("whatsapp:", "");
-const escapedPhone = cleanPhone.replace(/'/g, "\\'");
+nextFollowUp.setDate(
+nextFollowUp.getDate() + 2
+);
+
+const cleanPhone = String(phone).replace(
+"whatsapp:",
+""
+);
+
+const escapedPhone = cleanPhone.replace(
+/'/g,
+"\\'"
+);
 
 const fields = {
 Phone: cleanPhone,
@@ -343,10 +447,14 @@ Notes: note,
 };
 
 if (user.propertyType) {
-fields["Property Type"] = user.propertyType;
+fields["Property Type"] =
+user.propertyType;
 }
 
-if (user.budget !== null && !Number.isNaN(user.budget)) {
+if (
+user.budget !== null &&
+!Number.isNaN(user.budget)
+) {
 fields.Budget = user.budget;
 }
 
@@ -357,7 +465,11 @@ filterByFormula: `{Phone} = '${escapedPhone}'`,
 })
 .firstPage(function (searchErr, records) {
 if (searchErr) {
-console.error("Airtable search error:", searchErr);
+console.error(
+"Airtable search error:",
+searchErr
+);
+
 return;
 }
 
@@ -371,14 +483,25 @@ id: recordId,
 fields,
 },
 ],
-function (updateErr, updatedRecords) {
+function (
+updateErr,
+updatedRecords
+) {
 if (updateErr) {
-console.error("Airtable update error:", updateErr);
+console.error(
+"Airtable update error:",
+updateErr
+);
+
 return;
 }
 
 user.saved = true;
-console.log("Lead updated:", updatedRecords[0].id);
+
+console.log(
+"Lead updated:",
+updatedRecords[0].id
+);
 }
 );
 } else {
@@ -388,14 +511,25 @@ base(TABLE_NAME).create(
 fields,
 },
 ],
-function (createErr, createdRecords) {
+function (
+createErr,
+createdRecords
+) {
 if (createErr) {
-console.error("Airtable create error:", createErr);
+console.error(
+"Airtable create error:",
+createErr
+);
+
 return;
 }
 
 user.saved = true;
-console.log("Lead created:", createdRecords[0].id);
+
+console.log(
+"Lead created:",
+createdRecords[0].id
+);
 }
 );
 }
@@ -403,61 +537,94 @@ console.log("Lead created:", createdRecords[0].id);
 }
 
 function scheduleFollowUp(to, user) {
-console.log("SCHEDULE FOLLOWUP STARTED", to);
+console.log(
+"SCHEDULE FOLLOWUP STARTED",
+to
+);
 
 if (!twilioClient) {
-console.error("FOLLOW-UP ERROR: Twilio client not configured");
+console.error(
+"FOLLOW-UP ERROR: Twilio client not configured"
+);
+
 return;
 }
 
 setTimeout(() => {
 if (user.followUpSent) return;
 
-const calendlyLink = getCalendlyLink(user.intent);
+const calendlyLink = getCalendlyLink(
+user.intent
+);
 
 const followUpMessage = `Quick follow-up — are you still interested in scheduling a quick call?
 
 You can book here anytime:
 ${calendlyLink}`;
 
-const cleanTo = String(to).replace("whatsapp:", "");
-const whatsappTo = cleanTo.startsWith("+")
-? `whatsapp:${cleanTo}`
-: `whatsapp:+${cleanTo}`;
+const whatsappTo =
+normalizeWhatsAppNumber(to);
 
-console.log("TRYING TO SEND FOLLOW-UP TO:", whatsappTo);
+if (!whatsappTo) {
+console.error(
+"FOLLOW-UP ERROR: Invalid WhatsApp number"
+);
+
+return;
+}
+
+console.log(
+"TRYING TO SEND FOLLOW-UP TO:",
+whatsappTo
+);
 
 twilioClient.messages
 .create({
-from: process.env.TWILIO_WHATSAPP_FROM,
+from:
+process.env.TWILIO_WHATSAPP_FROM,
 to: whatsappTo,
 body: followUpMessage,
 })
 .then((message) => {
 user.followUpSent = true;
-console.log("FOLLOW-UP SENT:", message.sid);
+
+console.log(
+"FOLLOW-UP SENT:",
+message.sid
+);
 })
 .catch((err) => {
-console.error("FOLLOW-UP ERROR:", err.message);
+console.error(
+"FOLLOW-UP ERROR:",
+err.message
+);
 });
 }, 24 * 60 * 60 * 1000);
 }
 
 async function calendlyRequest(path) {
 if (!CALENDLY_PAT) {
-throw new Error("CALENDLY_PAT is missing");
+throw new Error(
+"CALENDLY_PAT is missing"
+);
 }
 
-const res = await fetch(`${CALENDLY_API_BASE}${path}`, {
+const res = await fetch(
+`${CALENDLY_API_BASE}${path}`,
+{
 headers: {
 Authorization: `Bearer ${CALENDLY_PAT}`,
 "Content-Type": "application/json",
 },
-});
+}
+);
 
 if (!res.ok) {
 const text = await res.text();
-throw new Error(`Calendly API error ${res.status}: ${text}`);
+
+throw new Error(
+`Calendly API error ${res.status}: ${text}`
+);
 }
 
 return res.json();
@@ -468,7 +635,9 @@ if (CALENDLY_ORGANIZATION_URI) {
 return CALENDLY_ORGANIZATION_URI;
 }
 
-const me = await calendlyRequest("/users/me");
+const me = await calendlyRequest(
+"/users/me"
+);
 
 const organizationUri =
 me.resource.current_organization ||
@@ -476,7 +645,9 @@ me.resource.organization ||
 "";
 
 if (!organizationUri) {
-throw new Error("Calendly organization URI not found from /users/me.");
+throw new Error(
+"Calendly organization URI not found from /users/me."
+);
 }
 
 return organizationUri;
@@ -485,39 +656,74 @@ return organizationUri;
 async function syncCalendlyBookings() {
 console.log("SYNC CALENDLY STARTED");
 
-const organizationUri = await getCalendlyOrganizationUri();
+const organizationUri =
+await getCalendlyOrganizationUri();
 
 const now = new Date();
-const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-const eventsData = await calendlyRequest(
+const from = new Date(
+now.getTime() -
+30 * 24 * 60 * 60 * 1000
+);
+
+const to = new Date(
+now.getTime() +
+30 * 24 * 60 * 60 * 1000
+);
+
+const eventsData =
+await calendlyRequest(
 `/scheduled_events?organization=${encodeURIComponent(
 organizationUri
 )}&min_start_time=${from.toISOString()}&max_start_time=${to.toISOString()}&status=active&sort=start_time:asc&count=100`
 );
 
-console.log("Calendly eventsData:", JSON.stringify(eventsData, null, 2));
-const events = eventsData.collection || [];
+console.log(
+"Calendly eventsData:",
+JSON.stringify(eventsData, null, 2)
+);
+
+const events =
+eventsData.collection || [];
+
 let checked = 0;
 let updated = 0;
 
 for (const event of events) {
-const eventUuid = String(event.uri).split("/").pop();
+const eventUuid = String(
+event.uri
+)
+.split("/")
+.pop();
 
-const inviteesData = await calendlyRequest(
+const inviteesData =
+await calendlyRequest(
 `/scheduled_events/${eventUuid}/invitees?status=active&count=100`
 );
 
-const invitees = inviteesData.collection || [];
+const invitees =
+inviteesData.collection || [];
 
 for (const invitee of invitees) {
-console.log("Invitee Email:", invitee.email);
-console.log("Invitee Name:", invitee.name);
-console.log("Event URI:", event.uri);
+console.log(
+"Invitee Email:",
+invitee.email
+);
+
+console.log(
+"Invitee Name:",
+invitee.name
+);
+
+console.log(
+"Event URI:",
+event.uri
+);
+
 checked++;
 
-const didUpdate = await updateLeadBookingByEmail({
+const didUpdate =
+await updateLeadBookingByEmail({
 email: invitee.email,
 inviteeName: invitee.name,
 eventUri: event.uri,
@@ -556,36 +762,111 @@ if (!email) {
 return resolve(false);
 }
 
-const safeEmail = String(email).toLowerCase().replace(/'/g, "\\'");
+const safeEmail = String(email)
+.toLowerCase()
+.replace(/'/g, "\\'");
 
 base(TABLE_NAME)
 .select({
 maxRecords: 1,
 filterByFormula: `LOWER({Email}) = '${safeEmail}'`,
 })
-.firstPage(function (searchErr, records) {
+.firstPage(
+async function (
+searchErr,
+records
+) {
 if (searchErr) {
-console.error("Airtable booking search error:", searchErr);
+console.error(
+"Airtable booking search error:",
+searchErr
+);
+
 return resolve(false);
 }
 
 if (!records.length) {
-console.log("No Airtable lead found for Calendly email:", email);
+console.log(
+"No Airtable lead found for Calendly email:",
+email
+);
+
 return resolve(false);
 }
 
 const record = records[0];
-const existingCalendlyUri = record.get("Calendly URI");
 
-if (
-existingCalendlyUri === inviteeUri ||
-existingCalendlyUri === eventUri
-) {
-console.log("Booking already synced:", email);
-return resolve(false);
+const existingCalendlyUri =
+record.get("Calendly URI");
+
+const bookingAlreadySynced =
+existingCalendlyUri ===
+inviteeUri ||
+existingCalendlyUri === eventUri;
+
+const bookingDetails = {
+recordId: record.id,
+email,
+inviteeName,
+eventUri,
+inviteeUri,
+startTime,
+eventName,
+
+phone:
+record.get("Phone") || "",
+
+clientName:
+record.get("Client Name") ||
+inviteeName ||
+"",
+
+leadId:
+record.get("Lead ID") || "",
+
+propertyType:
+record.get("Property Type") ||
+"",
+
+location:
+record.get("Location") || "",
+
+budget:
+record.get("Budget") || "",
+
+confirmationSent:
+Boolean(
+record.get(
+"Confirmation Sent"
+)
+),
+
+agentNotified:
+Boolean(
+record.get(
+"Agent Notified"
+)
+),
+};
+
+if (bookingAlreadySynced) {
+console.log(
+"Booking already synced:",
+email
+);
+
+const notificationResult =
+await sendBookingNotifications(
+bookingDetails
+);
+
+return resolve(
+notificationResult
+);
 }
 
-const existingLog = record.get("Activity Log") || "";
+const existingLog =
+record.get("Activity Log") || "";
 
 const bookingEntry = `
 ${new Date().toLocaleString()}
@@ -604,45 +885,351 @@ base(TABLE_NAME).update(
 {
 id: record.id,
 fields: {
-"Booking Status": "Booked",
-"Booking Time": startTime,
-"Calendly Email": email,
-"Calendly Event ID": eventUri,
-"Calendly URI": inviteeUri || eventUri,
-"Viewing Booked": true,
-"Viewing Date": startTime,
-"Pipeline Stage": "Appointment Booked",
-"Agent Status": "Viewing Scheduled",
-"Activity Log": `${existingLog}\n${bookingEntry}`,
+"Booking Status":
+"Booked",
+
+"Booking Time":
+startTime,
+
+"Calendly Email":
+email,
+
+"Calendly Event ID":
+eventUri,
+
+"Calendly URI":
+inviteeUri ||
+eventUri,
+
+"Viewing Booked":
+true,
+
+"Viewing Date":
+startTime,
+
+"Pipeline Stage":
+"Appointment Booked",
+
+"Agent Status":
+"Viewing Scheduled",
+
+"Activity Log":
+`${existingLog}\n${bookingEntry}`,
 },
 },
 ],
-function (updateErr) {
+async function (updateErr) {
 if (updateErr) {
-console.error("Airtable booking update error:", updateErr);
+console.error(
+"Airtable booking update error:",
+updateErr
+);
+
 return resolve(false);
 }
 
-console.log("Booking synced to Airtable:", email);
-return resolve(true);
+console.log(
+"Booking synced to Airtable:",
+email
+);
+
+const notificationResult =
+await sendBookingNotifications(
+bookingDetails
+);
+
+return resolve(
+true ||
+notificationResult
+);
+}
+);
 }
 );
 });
+}
+
+async function sendBookingNotifications(
+booking
+) {
+let sentSomething = false;
+
+const formatted =
+formatBookingDateTime(
+booking.startTime
+);
+
+if (!booking.confirmationSent) {
+const customerNumber =
+normalizeWhatsAppNumber(
+booking.phone
+);
+
+if (!customerNumber) {
+console.log(
+"Customer confirmation skipped: phone number is missing."
+);
+} else {
+const customerMessage = `✅ Your viewing has been confirmed.
+
+We look forward to meeting you on ${formatted.date} at ${formatted.time}.
+
+If you need to reschedule, simply reply to this message.`;
+
+const customerSent =
+await sendWhatsAppMessage(
+customerNumber,
+customerMessage
+);
+
+if (customerSent) {
+await updateAirtableFields(
+booking.recordId,
+{
+"Confirmation Sent": true,
+}
+);
+
+booking.confirmationSent = true;
+sentSomething = true;
+
+console.log(
+"Customer booking confirmation sent:",
+booking.phone
+);
+}
+}
+} else {
+console.log(
+"Customer confirmation already sent:",
+booking.email
+);
+}
+
+if (!booking.agentNotified) {
+const agentNumber =
+normalizeWhatsAppNumber(
+AGENT_WHATSAPP_NUMBER
+);
+
+if (!agentNumber) {
+console.log(
+"Agent notification skipped: AGENT_WHATSAPP_NUMBER is missing."
+);
+} else {
+const propertyText =
+booking.propertyType ||
+booking.eventName ||
+"Property";
+
+const locationText =
+booking.location
+? ` in ${booking.location}`
+: "";
+
+const budgetText =
+booking.budget !== "" &&
+booking.budget !== null
+? `\nBudget: ${booking.budget}`
+: "";
+
+const agentMessage = `🔔 New Viewing Booked
+
+${booking.clientName || "A lead"} booked a viewing for ${propertyText}${locationText}.
+
+${formatted.date} — ${formatted.time}
+
+Lead ID: ${booking.leadId || "Not available"}
+Phone: ${booking.phone || "Not available"}${budgetText}`;
+
+const agentSent =
+await sendWhatsAppMessage(
+agentNumber,
+agentMessage
+);
+
+if (agentSent) {
+await updateAirtableFields(
+booking.recordId,
+{
+"Agent Notified": true,
+}
+);
+
+booking.agentNotified = true;
+sentSomething = true;
+
+console.log(
+"Agent notification sent:",
+AGENT_WHATSAPP_NUMBER
+);
+}
+}
+} else {
+console.log(
+"Agent notification already sent:",
+booking.email
+);
+}
+
+return sentSomething;
+}
+
+async function sendWhatsAppMessage(
+to,
+body
+) {
+if (!twilioClient) {
+console.error(
+"WHATSAPP SEND ERROR: Twilio client is not configured."
+);
+
+return false;
+}
+
+if (
+!process.env.TWILIO_WHATSAPP_FROM
+) {
+console.error(
+"WHATSAPP SEND ERROR: TWILIO_WHATSAPP_FROM is missing."
+);
+
+return false;
+}
+
+try {
+const message =
+await twilioClient.messages.create({
+from:
+process.env.TWILIO_WHATSAPP_FROM,
+to,
+body,
 });
+
+console.log(
+"WHATSAPP MESSAGE SENT:",
+message.sid
+);
+
+return true;
+} catch (error) {
+console.error(
+"WHATSAPP SEND ERROR:",
+error.message
+);
+
+return false;
+}
+}
+
+function normalizeWhatsAppNumber(value) {
+if (!value) return "";
+
+let clean = String(value)
+.trim()
+.replace("whatsapp:", "")
+.replace(/\s+/g, "")
+.replace(/[()-]/g, "");
+
+if (!clean) return "";
+
+if (!clean.startsWith("+")) {
+clean = `+${clean}`;
+}
+
+return `whatsapp:${clean}`;
+}
+
+function formatBookingDateTime(
+startTime
+) {
+const date = new Date(startTime);
+
+if (Number.isNaN(date.getTime())) {
+return {
+date: startTime || "the scheduled date",
+time: "",
+};
+}
+
+const dateFormatter =
+new Intl.DateTimeFormat("en-US", {
+timeZone: BOOKING_TIMEZONE,
+weekday: "long",
+month: "long",
+day: "numeric",
+year: "numeric",
+});
+
+const timeFormatter =
+new Intl.DateTimeFormat("en-US", {
+timeZone: BOOKING_TIMEZONE,
+hour: "numeric",
+minute: "2-digit",
+hour12: true,
+});
+
+return {
+date: dateFormatter.format(date),
+time: timeFormatter.format(date),
+};
+}
+
+function updateAirtableFields(
+recordId,
+fields
+) {
+return new Promise(
+(resolve, reject) => {
+base(TABLE_NAME).update(
+[
+{
+id: recordId,
+fields,
+},
+],
+function (error, records) {
+if (error) {
+console.error(
+"Airtable field update error:",
+error
+);
+
+return reject(error);
+}
+
+return resolve(records[0]);
+}
+);
+}
+);
 }
 
 function parseBudget(value) {
-const clean = String(value).toLowerCase().replace(/,/g, "").trim();
+const clean = String(value)
+.toLowerCase()
+.replace(/,/g, "")
+.trim();
 
 if (clean.includes("k")) {
-return Number(clean.replace(/[^\d.]/g, "")) * 1000;
+return (
+Number(
+clean.replace(/[^\d.]/g, "")
+) * 1000
+);
 }
 
 if (clean.includes("m")) {
-return Number(clean.replace(/[^\d.]/g, "")) * 1000000;
+return (
+Number(
+clean.replace(/[^\d.]/g, "")
+) * 1000000
+);
 }
 
-return Number(clean.replace(/[^\d.]/g, ""));
+return Number(
+clean.replace(/[^\d.]/g, "")
+);
 }
 
 function sendReply(res, reply) {
@@ -651,7 +1238,10 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Message>${escapeXml(reply)}</Message>
 </Response>`;
 
-res.writeHead(200, { "Content-Type": "text/xml" });
+res.writeHead(200, {
+"Content-Type": "text/xml",
+});
+
 res.end(xml);
 }
 
@@ -664,23 +1254,21 @@ return String(value)
 .replace(/'/g, "&apos;");
 }
 
-app.post("/webhook/calendly", (req, res) => {
-console.log("Calendly webhook received:", req.body);
-return res.status(200).send("Calendly webhook received");
-});
-
 console.log("REACHED END OF FILE");
 
 app.listen(PORT, () => {
-console.log(`Server running on port ${PORT}`);
+console.log(
+`Server running on port ${PORT}`
+);
 
 setInterval(() => {
-syncCalendlyBookings().catch((error) => {
-console.error("Scheduled Calendly sync failed:", error.message);
-});
+syncCalendlyBookings().catch(
+(error) => {
+console.error(
+"Scheduled Calendly sync failed:",
+error.message
+);
+}
+);
 }, 5 * 60 * 1000);
 });
-
-
-
-
