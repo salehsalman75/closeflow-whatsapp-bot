@@ -4,6 +4,7 @@ const cors = require("cors");
 const Airtable = require("airtable");
 const twilio = require("twilio");
 require("dotenv").config();
+const crypto = require("crypto");
 
 const app = express();
 
@@ -72,8 +73,13 @@ error: error.message,
 }
 });
 
+function generateLeadId() {
+return `CF-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+}
+
 function createNewUser() {
 return {
+leadId: generateLeadId(),
 step: "start",
 intent: "",
 budget: null,
@@ -316,6 +322,7 @@ const escapedPhone = cleanPhone.replace(/'/g, "\\'");
 
 const fields = {
 Phone: cleanPhone,
+"Lead ID": user.leadId,
 "Client Name": user.clientName || "",
 Email: user.email || "",
 Intent: user.intent,
